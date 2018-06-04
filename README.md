@@ -50,7 +50,7 @@ in order to help the picker to make better decisions (since target kernel symbol
 in the target binary).
 
 **Output**:  
-As explained in the *output_file* parameter.
+Besides the *output_file* which stores the change site information, the picker will generate another file *output_file_fail* which records the patches for which the picker fails to identify any suitable change sites. This can be due to two reasons: (1) the picker cannot match/locate the patch in the reference kernel source (2) the patch has no suitable change sites to translate (eg. only change some variable definitions.)
 
 ## 0x3 Translator
 `python ext_sig.py [ref_kernel_image] [ref_kernel_symbol_table] [ref_kernel_vmlinux] [ext_list] [output_dir]`  
