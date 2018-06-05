@@ -16,6 +16,9 @@ git clone https://github.com/seclab-ucr/cle-fiber.git cle
 git clone https://github.com/seclab-ucr/angr-management-fiber.git angr-management
 git clone https://github.com/seclab-ucr/angr-doc-fiber.git angr-doc
 git clone https://github.com/seclab-ucr/angrop-fiber.git angrop
+git clone https://github.com/seclab-ucr/angr-simuvex-fiber.git simuvex
+git clone https://github.com/seclab-ucr/angr-vex-fiber.git vex
+git clone https://github.com/seclab-ucr/angr-pyvex-fiber.git pyvex
 git -C angr checkout fiber
 git -C angr pull
 git -C claripy checkout fiber
@@ -28,9 +31,15 @@ git -C angr-doc checkout fiber
 git -C angr-doc pull
 git -C angrop checkout fiber
 git -C angrop pull
+git -C simuvex checkout fiber
+git -C simuvex pull
+git -C vex checkout fiber
+git -C vex pull
+git -C pyvex checkout fiber
+git -C pyvex pull
 # Set up the angr-dev environment
-sudo pip install virtualenvwrapper
-sudo ./setup.sh -i -v -E $2
+# sudo pip install virtualenvwrapper
+./setup.sh -i -E $2
 cd ..
 echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
 echo "You are ready to go." 
