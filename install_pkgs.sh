@@ -7,6 +7,7 @@ git pull
 git checkout networkx-1.11
 python setup.py install
 cd ..
+pip install fuzzywuzzy
 #Should be ready to go.
 echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>'
 echo 'Now you are using networkx v1.11 in current virtual env.'
