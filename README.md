@@ -22,6 +22,12 @@ or even manually specify some change sites.
 Use the valid binary signatures to do patch presence test for the target kernels with the matcher's mode 1. (section 0x4)
 
 ## 0x1 Environment Setup
+At first we need to install virtualenvwrapper for python:  
+`pip install virtualenvwrapper`  
+Should there exist any permission issues, try:  
+`sudo pip install virtualenvwrapper`  
+NOTE, **plz don't use *sudo* from here on**.  
+Setup the angr development environment specifically crafted for FIBER:  
 `./setup_angr_env.sh [dir_name] [venv_name]`
 
 - *dir_name*:
@@ -29,7 +35,10 @@ Specify a directory and we'll put angr related files there.
 - *venv_name*:
 We will use a virtual python environment for FIBER, specify its name here.
 
-Now you are ready to use FIBER scripts.
+It's time to install some required packages in the virtual env:  
+`workon [venv]`  
+`./install_pkgs.sh`  
+Now you are ready to use FIBER scripts.  
 Before running any FIBER scripts, remember to switch the virtual environment at first:  
 `workon [venv_name]`  
 To exit the virtual environment:  
