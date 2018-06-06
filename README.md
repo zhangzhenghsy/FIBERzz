@@ -35,6 +35,8 @@ Specify a directory and we'll put angr related files there.
 - *venv_name*:
 We will use a virtual python environment for FIBER, specify its name here.
 
+**NOTE**, should you be prompted to enter username/password for GitHub accounts during the execution of above script,
+plz simply ignore that and just type *"Enter"*.  
 It's time to install some required packages in the virtual env:  
 `workon [venv_name]`  
 `./install_pkgs.sh`  
