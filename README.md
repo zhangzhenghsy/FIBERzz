@@ -23,12 +23,14 @@ Use the valid binary signatures to do patch presence test for the target kernels
 
 ## 0x1 Environment Setup
 At first we need to install virtualenvwrapper for python:  
-`pip install virtualenvwrapper`  
+`~$ pip install virtualenvwrapper`  
 Should there exist any permission issues, try:  
-`sudo pip install virtualenvwrapper`  
+`~$ sudo pip install virtualenvwrapper`  
 NOTE, **plz don't use *sudo* from here on**.  
+`~$ git clone https://github.com/seclab-ucr/FIBER.git FIBER`  
+`~$ cd FIBER`  
 Setup the angr development environment specifically crafted for FIBER:  
-`./setup_angr_env.sh [dir_name] [venv_name]`
+`~/FIBER$ ./setup_angr_env.sh [dir_name] [venv_name]`
 
 - *dir_name*:
 Specify a directory and we'll put angr related files there.
@@ -38,17 +40,16 @@ We will use a virtual python environment for FIBER, specify its name here.
 **NOTE**, should you be prompted to enter username/password for GitHub accounts during the execution of above script,
 plz simply ignore that and just type *"Enter"*.  
 It's time to install some required packages in the virtual env:  
-`workon [venv_name]`  
-`./install_pkgs.sh`  
+`~/FIBER$ workon [venv_name]`  
+`(venv_name)~/FIBER$ ./install_pkgs.sh`  
 Now you are ready to use FIBER scripts.  
+As a test, you can run below command to see whether the signature can be shown w/o issues:  
+`(venv_name)~/FIBER$ python test_sig.py examples/sigs/CVE-2016-3866-sig-0`
 
 **Before running any FIBER scripts, remember to switch the virtual environment at first**:  
 `workon [venv_name]`  
 To exit the virtual environment:  
 `deactivate`  
-
-As a test, you can run below command to see whether the signature can be shown w/o issues:  
-`python test_sig.py examples/sigs/CVE-2016-3866-sig-0`
 
 ## 0x2 Picker
 `python pick_sig.py [patch_list] [reference kernel source] [output_file] [symbol_table,...]`
