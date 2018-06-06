@@ -40,7 +40,7 @@ git -C pyvex pull
 # Set up the angr-dev environment
 # sudo pip install virtualenvwrapper
 ./setup.sh -i -E $2
-cd ..
+cd ../..
 echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
 echo "You are ready to go." 
 echo "workon $2 : to switch virtual environment before running FIBER scripts."
