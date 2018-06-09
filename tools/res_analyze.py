@@ -104,7 +104,6 @@ def analyze_sig_verify_res():
     (r_res,r_time,_) = get_match_inf(sys.argv[2],limit)
     #Compare the b_res and r_res to filter out those signatures that are not unique at binary level.
     for c in sorted(list(b_res)):
-        print c
         if not c in r_res:
             continue
         #Pick out those different signatures, but if all are the same, then just reserve them.
