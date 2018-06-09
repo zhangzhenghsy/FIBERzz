@@ -104,11 +104,15 @@ def analyze_sig_verify_res():
     (r_res,r_time,_) = get_match_inf(sys.argv[2],limit)
     #Compare the b_res and r_res to filter out those signatures that are not unique at binary level.
     for c in sorted(list(b_res)):
+        print c
         if not c in r_res:
             continue
         #Pick out those different signatures, but if all are the same, then just reserve them.
         sig_ind = []
         for ind in b_res[c]:
+            if not ind in r_res[c]:
+                sys.stderr.write('%s-sig-%d does not exist in the match result of unpatched reference kernel.\n' % (c,ind))
+                continue
             if b_res[c][ind][0] > max(r_res[c][ind][0],0):
                 sig_ind += [ind]
         if sig_ind:
