@@ -516,10 +516,10 @@ def _combine_subsigs(cfg,g0,g1):
             print '!!!Null common predecessors'
             print len(g0)
             print len(g1)
-            print 'g0 ' + hex_array_sorted(g0)
+            print 'g0 ' + hex_array_sorted([n.addr for n in g0.nodes()])
             print 'a0 ' + hex_array_sorted(a0) 
             print 'p0 ' + hex_array_sorted(p0) 
-            print 'g1 ' + hex_array_sorted(g1)
+            print 'g1 ' + hex_array_sorted([n.addr for n in g1.nodes()])
             print 'a1 ' + hex_array_sorted(a1) 
             print 'p1 ' + hex_array_sorted(p1) 
         gs = cluster_padding_nodes(cfg,tp)
@@ -555,7 +555,12 @@ def _combine_subsigs(cfg,g0,g1):
             sn = sorted(sn,key=lambda x:len(x[1]))
         else:
             sn = []
-        t = en[0][1] if not sn or len(en[0][1]) <= len(sn[0][1]) else sn[0][1]
+        if not sn and not en:
+            #Something very unusual must happen
+            print 'Fail to combine two sub-CFG, possibly there are unrecognized instructions in the function...'
+            t = set()
+        else:
+            t = en[0][1] if not sn or len(en[0][1]) <= len(sn[0][1]) else sn[0][1]
     t = t.union(a0).union(a1)
     nodes = [get_node_by_addr(o_cfg,x) for x in t]
     sg = o_cfg.subgraph(nodes)
