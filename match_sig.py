@@ -538,6 +538,7 @@ def match_sig():
     miss_sigs = []
     prev_cve = ''
     td = 0
+    applicable = True
     with open(sys.argv[3],'r') as f:
         for line in f:
             line = line.strip()
@@ -547,6 +548,7 @@ def match_sig():
                 continue
             tks = line.split(' ')
             cve = tks[0][tks[0].rfind('/')+1:tks[0].rfind('-sig')]
+            applicable = True
             if len(tks) > 1:
                 if cve in res_dic:
                     continue
@@ -560,12 +562,14 @@ def match_sig():
             except:
                 print 'No sig file: ' + tks[0]
                 miss_sigs += [tks[0]]
+                applicable = False
                 continue
             func_name = sig.graph['func_name']
             sig_name = sig.graph['sig_name']
             default_options = sig.graph['options']
             entry = symbol_table.lookup_func_name(func_name)
             if entry is None:
+                applicable = False
                 print 'Cannot locate the function %s for sig %s in specified kernel image symbol table' % (func_name,sig_name)
                 continue
             t0 = time.time()
@@ -606,7 +610,7 @@ def match_sig():
                 res_vec += [(sig_name,cnt,t1)]
                 print '%s has %d matches, taking %.2f s' % res_vec[-1]
     if len(tks) > 1:
-        if not cve in res_dic:
+        if not cve in res_dic and applicable:
             res_dic[cve] = ('N',td)
         td = 0
         print '----------------RESULTS----------------'
