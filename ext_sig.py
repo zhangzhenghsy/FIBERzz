@@ -145,6 +145,7 @@ default_options = {
     'match_load_single_mapping':False,
     'match_store_single_mapping':False,
     'match_exit_single_mapping':False,
+    'match_insns_ignore_type':False,
 }
 
 def _set_extra_default_options(options):
