@@ -898,7 +898,7 @@ def do_pick_sig(patch_inf):
             for r in res_cand:
                 print '=============='
                 print r
-        return res_cand[:3] if len(res_cand) >= 3 else res_cand
+        return res_cand[:8] if len(res_cand) >= 8 else res_cand
         #return res_cand
 
 sym_tabs = []
