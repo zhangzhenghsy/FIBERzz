@@ -17,7 +17,7 @@ class Sym_Executor(object):
         self._num_find = 10
         self.options = options
 
-    def _get_initial_state(self,proj,start):
+    def _get_initial_state(self,proj,start,targetfunc=None):
         if proj is None:
             return None
         st = proj.factory.blank_state(addr=start,symbolic_sp=True)
@@ -28,6 +28,8 @@ class Sym_Executor(object):
         # E.g. st.options.add(simuvex.o.LAZY_SOLVES) ('options' is a set) 
         # CALLLESS to do intra-procedure analysis
         st.options.add(simuvex.o.CALLLESS)
+        if targetfunc is not None:
+            st.options.add(str(hex(targetfunc)))
         # To prevent the engine from discarding log history
         st.options.add(simuvex.o.TRACK_ACTION_HISTORY)
         if self.options.get('simplify_ast',True):
@@ -47,18 +49,35 @@ class Sym_Executor(object):
 
     #Include all the BBs along the path from start to ends in the cfg into the whitelist.
     #The CFG here is CFGAcc.
-    def _prep_whitelist(self,cfg,cfg_bounds,ends,start=None,proj=None,sym_tab=None):
+    def _prep_whitelist(self,cfg,cfg_bounds,ends,start=None,proj=None,sym_tab=None,cfg2=None,cfg_bounds2=None,ends2=None,start2=None,func_cfg=None):
+        #print "cfg:", [hex(n.addr) for n in cfg.nodes()]
+        #print cfg.functions[cfg_bounds[0]]
         if cfg is None or cfg_bounds is None or len(cfg_bounds) < 2:
             print '_prep_whitelist(): Incomplete CFG information'
             return
-        func_cfg = get_func_cfg(cfg,cfg_bounds[0],proj=proj,sym_tab=sym_tab)
+        for addr in cfg2.functions:
+            print cfg2.functions[addr]
+	if cfg2 is not None:
+	    func_cfg2 = get_func_cfg(cfg2,cfg_bounds2[0],proj=proj,sym_tab=sym_tab)
         if func_cfg is None:
             print 'No func_cfg is available at %x' % cfg_bounds[0]
             return
-        start = cfg_bounds[0] if start is None else start
+        start = cfg_bounds[0] 
         self._all_bbs = set([x.addr for x in func_cfg.nodes()])
+        #print '_all_bbs: ' + str([hex(x) for x in list(self._all_bbs)])
+        #print '_all_bbs2: '+str([hex(x) for x in list(set([x.addr for x in func_cfg2.nodes()]))])
+	if cfg2 is not None:
+	    self._all_bbs = self._all_bbs.union(set([x.addr for x in func_cfg2.nodes()]))
         self._whitelist = get_node_addrs_between(func_cfg,start,ends,from_func_start=(start == cfg_bounds[0]))
-        
+	if cfg2 is not None:
+	    self._whitelist= self._whitelist.union(get_node_addrs_between(func_cfg2,start2,ends2,from_func_start=(start2 == cfg_bounds2[0])))
+       
+        l = list(self._whitelist)
+        l.sort()
+        #print 'whitelist: ' + str([hex(x) for x in l])
+        l = list(self._all_bbs)
+        l.sort()
+        #print '_all_bbs: ' + str([hex(x) for x in l])
         if self.dbg_out:
             l = list(self._whitelist)
             l.sort()
@@ -77,6 +96,8 @@ class Sym_Executor(object):
         #print 'avoid_func: ' + str(hex(p.addr)) + ' ' + str(p.addr in whitelist)
         #One problem is that, sometimes p.addr is in the middle of a certain BB, while in whitelist we only have start addresses of BBs.
         #Currently for these cases, we will let it continue to execute because it will align to the BB starts later.
+        with open('testexplorenodes','a') as f:
+            f.write(str(hex(p.addr))+'\n')
         return False if p.addr not in self._all_bbs else (not p.addr in self._whitelist)
 
     #This is basically the 'hook_complete' used in 'explorer' technique, simply deciding whether num_find has been reached.
@@ -113,20 +134,30 @@ class Sym_Executor(object):
     #targets: Where to end the symbolic execution? Must be within the cfg_bounds. Can specify multiple targets in a list.
     #Ret:
     #The resulting SimManager. 
-    def try_sym_exec(self,proj,cfg,cfg_bounds,targets,states=None,start=None,new_tracer=False,tracer=None,new_recorder=False,recorder=None,sym_tab=None,sigs=None,num_find=10):
+    def try_sym_exec(self,proj,cfg,cfg_bounds,targets,states=None,start=None,new_tracer=False,tracer=None,new_recorder=False,recorder=None,sym_tab=None,sigs=None,cfg2=None,cfg_bounds2=None,targets2=None, start2=None,func_cfg=None,num_find=10):
+        print "start1: ", hex(start)
+        #print "start2: ", hex(start2)
         if cfg is None or cfg_bounds is None or len(cfg_bounds) < 2:
             print 'No CFG information available for sym exec.'
             return None
         #This is the start point of sym exec.
         st = start if start is not None else cfg_bounds[0]
+	if start2 is not None:
+	    st=start2
         #Fill initial state.
+        #print 'hex(start)', hex(start)
+        #print 'str(hex(start))', str(hex(start))
         if states is None:
-            init_state = self._get_initial_state(proj,st)
+            if start2 is not None:
+                init_state = self._get_initial_state(proj,st,start)
+            else:
+                init_state = self._get_initial_state(proj,st)
             states = [init_state]
         
         #Whether we need to create a new Sym_Tracer to trace the symbolic execution
         if new_tracer:
             self.tracer = Sym_Tracer(symbol_table=sym_tab,dbg_out=self.dbg_out)
+			#for example:<class 'sym_tracer.Sym_Tracer'>: {'addr_collision': False, 'dbg_out': True, 'symbol_table': <sym_table.Sym_Table object at 0x7fffeba54890>, '_addr_conc_buf': [], '_sym_map': {}}
             #Clear any remaining breakpoints
             self.tracer.stop_trace(states)
             self.tracer.trace(states)
@@ -151,8 +182,7 @@ class Sym_Executor(object):
             self.recorder = recorder
         
         #Set the whitelist of basic blocks, we only want to include the BBs that along the paths from st to targets.
-        self._prep_whitelist(cfg,cfg_bounds,targets,st,proj=proj,sym_tab=sym_tab)
-    
+        self._prep_whitelist(cfg,cfg_bounds,targets,start,proj=proj,sym_tab=sym_tab,cfg2=cfg2,cfg_bounds2=cfg_bounds2,ends2=targets2,start2=start2,func_cfg=func_cfg)    
         self._num_find = num_find
         #Set the VeriTesting options
         veritesting_options = self._prep_veritesting_options(num_find=self._num_find)
