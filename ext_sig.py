@@ -22,7 +22,7 @@ except ImportError:
     import pickle
 from utils_sig import *
 from sym_table import Sym_Table
-from sym_executor import Sym_Executor
+from sym_executor2 import Sym_Executor
 
 #logging.basicConfig(level=logging.DEBUG) # adjust to the wanted debug level
 dbg_out = True
@@ -76,6 +76,7 @@ def init_signature_from_markers(proj,cfg,pos,negs,options,sym_tab=None):
 
 #We are given some instruction addrs here, we want to wrap them into a signature.
 def init_signature_from_insns_aarch64(proj,cfg,addrs,options,sym_tab=None):
+    #addrs: addrs: ['0xffffffc000616960L', '0xffffffc000616968L', '0xffffffc000616970L', '0xffffffc000616964L', '0xffffffc000616978L', '0xffffffc000616974L', '0xffffffc00061696cL', '0xffffffc00061695cL']
     node_addrs = set()
     pos = set()
     negs = set()
@@ -107,6 +108,7 @@ def init_signature_from_insns_aarch64(proj,cfg,addrs,options,sym_tab=None):
                 pos.add(addr_in[0])
                 negs.add(addr_in[-1])
     print '[Nodes Contained in the Sig] ' + hex_array(node_addrs)
+	#for example [Nodes Contained in the Sig] ['0xffffffc00061696cL', '0xffffffc00061693cL']
     #print '[Pos] ' + hex_array(list(pos))
     #print '[Negs] ' + hex_array(list(negs))
     #It seems we don't need to use those options like 'default_cfg_ends', since we already have the precise marked range.
@@ -174,11 +176,21 @@ def do_ext_sig_markers(b,start,end,options=default_options,symbol_table=None):
     smg = exe.try_sym_exec(proj=b,cfg=cfg,cfg_bounds=[start,end],targets=targets,start=start,new_tracer=True,new_recorder=True,sigs=sigs,sym_tab=symbol_table)
     return (exe.tracer.addr_collision,sigs)
 
-def do_ext_sig_insns(b,start,end,addrs,options=default_options,symbol_table=None):
+def do_ext_sig_insns(b,start,end,addrs,options=default_options,symbol_table=None, start2=None, end2=None, addrs2=None):
     #Get the CFG at first, which is the base for multiple later tasks.
     cfg = get_cfg_acc(b,start,end)
+    #print "cfg:", [hex(n.addr) for n in cfg.nodes()]
+    for addr in cfg.functions:
+        print cfg.functions[addr]
     func_cfg = get_func_cfg(cfg,start,proj=b,sym_tab=symbol_table,simplify=True)
-
+    #print "\nL186", cfg.functions[start]
+    if start2 is not None:
+        cfg2 = get_cfg_acc(b,start2,end2)
+        #print "\nL189", cfg.functions[start]
+        #for addr in cfg.functions:
+        #    print cfg.functions[addr]
+        func_cfg2 = get_func_cfg(cfg2,start2,proj=b,sym_tab=symbol_table,simplify=True)
+        sigs2 = init_signature_from_insns_aarch64(b,func_cfg2,addrs2,options,sym_tab=symbol_table)
     sigs = init_signature_from_insns_aarch64(b,func_cfg,addrs,options,sym_tab=symbol_table)
     sigs = filter(is_sig_valid,sigs)
     if not sigs:
@@ -186,9 +198,11 @@ def do_ext_sig_insns(b,start,end,addrs,options=default_options,symbol_table=None
         return (False,None)
     #Get the execution targets from the sigs.
     targets = get_cfg_bound(sigs)
-
+    #print [hex(target) for target in targets]
+    targets2 = get_cfg_bound(sigs2)
+    #for example set(['0xffffffc00061696cL'])
     exe = Sym_Executor(options=options,dbg_out=True)
-    smg = exe.try_sym_exec(proj=b,cfg=cfg,cfg_bounds=[start,end],targets=targets,start=start,new_tracer=True,new_recorder=True,sigs=sigs,sym_tab=symbol_table)
+    smg = exe.try_sym_exec(proj=b,cfg=cfg, cfg_bounds=[start,end],targets=targets,start=start,new_tracer=True,new_recorder=True,sigs=sigs,sym_tab=symbol_table,cfg2=cfg2,cfg_bounds2=[start2,end2],targets2=targets2,start2=start2,func_cfg=func_cfg)
     return (exe.tracer.addr_collision,sigs)
 
 #Due to multiple reasons (eg. Angr fails to generate the complete CFG), the initialized signature may be invalid
@@ -212,16 +226,17 @@ def get_next_index(s):
     else:
         sig_index[s] = 0
         return 0
-
+#[ref_kernel_image] [ref_kernel_symbol_table] [ref_kernel_vmlinux] [ext_list] [output_dir]
 def ext_sig():
     global BASE
     symbol_table = Sym_Table(sys.argv[2])
     BASE = symbol_table.probe_arm64_kernel_base()
     code_segments = symbol_table.get_code_segments(BASE)
     #print [(hex(x),hex(y),hex(z)) for (x,y,z) in code_segments]
+	#('0x0L', '0x0L', '0x19d680L'), ('0x19d688L', '0x19d688L', '0x2d4cL'), ('0x1a03d8L', '0x1a03d8L', '0x42c0L'), ('0x1a46a0L', '0x1a46a0L', '0x5360L')
     b = load_kernel_image(sys.argv[1],ARCH,BASE,segments=code_segments)
     #Format of the function list file (argv[4]):
-    #[cve] [func_name] [line numbers] [key:val] [key:val] ...
+    #[housefunc_name] [func_name] [line numbers] [key:val] [key:val] ...
     perf_vec = []
     with open(sys.argv[4],'r') as f:
         for line in f:
@@ -231,31 +246,48 @@ def ext_sig():
             if line[0] == '#':
                 continue
             tokens = line.split(' ')
-            cve = tokens[0]
-            func_name = tokens[1]
-            lnos = _parse_line_nos(tokens[2])
+            housefunc_name = tokens[0]
+	    lnos2 = _parse_line_nos(tokens[1])
+            func_name = tokens[2]
+            lnos = _parse_line_nos(tokens[3])
             entry = symbol_table.lookup_func_name(func_name)
+	    entry2 = symbol_table.lookup_func_name(housefunc_name)
             if entry is None:
                 print 'Cannot locate function in symbol table: ' + func_name
                 continue
+	    if entry2 is None:
+                print 'Cannot locate function in symbol table: ' + housefunc_name
+                continue
             (ty,func_addr,func_size) = entry
+	    (ty2,func_addr2,func_size2) = entry2
+	    #(ty,func_addr,func_size): ('T', '0xffffffc000616520L', '0x9b8L')
             t0 = time.time()
+            print func_name,hex(func_addr),hex(func_addr+func_size),lnos
             addrs = get_addrs_from_lines_aarch64(sys.argv[3],func_name,func_addr,func_addr+func_size,lnos)
+            print housefunc_name,hex(func_addr2),hex(func_addr2+func_size2),lnos2
+	    addrs2=get_addrs_from_lines_aarch64(sys.argv[3],housefunc_name,func_addr2,func_addr2+func_size2,lnos2)
             aset = set()
+	    aset2=set()
             print '[Instructions Involved]'
             for ln in sorted(list(addrs)):
                 aset = aset.union(addrs[ln])
                 print '%d: %s' % (ln,str([hex(x) for x in sorted(list(addrs[ln]))]))
+				#4491: ['0xffffffc00061695cL', '0xffffffc000616960L', '0xffffffc000616964L', '0xffffffc000616968L', '0xffffffc000616974L', '0xffffffc000616978L']
+                #4492: ['0xffffffc00061696cL', '0xffffffc000616970L']
+	    for ln in sorted(list(addrs2)):
+		aset2 = aset2.union(addrs2[ln])
+                print '%d: %s' % (ln,str([hex(x) for x in sorted(list(addrs2[ln]))]))
             options = copy.deepcopy(default_options)
             _parse_options(options,tokens[3:])
+	    #tokens[3:]: ['match_reg_set:x0,x1', 'trim_non_tail_roots:True']
             _set_extra_default_options(options)
             if 'func_existence_test' in options:
                 print '-----------Pure Function Existence Testing------------'
-                print '%s func_name: %s, target_func: %s' % (cve,func_name,options['func_existence_test'])
+                print 'housefunc_name: %s func_name: %s, target_func: %s' % (housefunc_name,func_name,options['func_existence_test'])
                 sig = networkx.DiGraph()
-                sig_name = cve+'-sig-%d' % get_next_index(cve)
+                sig_name = housefunc_name+'-sig-%d' % get_next_index(housefunc_name)
                 sig.graph['sig_name'] = sig_name
-                sig.graph['func_name'] = func_name
+                sig.graph['func_name'] = house_func_name
                 sig.graph['options'] = options
                 with open(sys.argv[5]+'/'+sig_name,'wb') as fs:
                     pickle.dump(sig,fs,-1)
@@ -263,25 +295,25 @@ def ext_sig():
                 continue
             retry_cnt = 1
             while retry_cnt > 0:
-                (collision,sigs) = do_ext_sig_insns(b,func_addr,func_addr+func_size,aset,options,symbol_table)
+                (collision,sigs) = do_ext_sig_insns(b,func_addr,func_addr+func_size,aset,options,symbol_table, func_addr2, func_addr2+func_size2, aset2)
                 if not collision:
                     break
                 else:
-                    print 'Addr collision occurred when trying to extract sig %s in function %s, retry... %d' % (cve,func_name,retry_cnt)
+                    print 'Addr collision occurred when trying to extract sig %s in function %s, retry... %d' % (housefunc_name,func_name,retry_cnt)
                 retry_cnt = retry_cnt - 1
             if not sigs:
                 print '!!! No signature generated..'
                 continue
             #print sigs
-            sig_ind = get_next_index(cve)
-            perf_vec += [(cve+'-sig-%d' % sig_ind,time.time()-t0)]
+            sig_ind = get_next_index(housefunc_name)
+            perf_vec += [(housefunc_name+'-sig-%d' % sig_ind,time.time()-t0)]
             for i in range(len(sigs)):
                 #Record some global information in sig.
-                sigs[i].graph['func_name'] = func_name
+                sigs[i].graph['func_name'] = housefunc_name
                 if len(sigs) > 1:
-                    sig_name = cve+'-sig-%d-%d' % (sig_ind,i)
+                    sig_name = housefunc_name+'-sig-%d-%d' % (sig_ind,i)
                 else:
-                    sig_name = cve+'-sig-%d' % sig_ind
+                    sig_name = housefunc_name+'-sig-%d' % sig_ind
                 sigs[i].graph['sig_name'] = sig_name
                 sigs[i].graph['options'] = options
                 simplify_signature(sigs[i])
@@ -296,7 +328,7 @@ def ext_sig():
             print l
             f.write(l+'\n')
 
-ADDR2LINE = '/home/hang/ION/aarch64-linux-android-4.9/bin/aarch64-linux-android-addr2line'
+ADDR2LINE = '/home/zheng/fiber/aarch64-linux-android-4.9/bin/aarch64-linux-android-addr2line'
 #Use addr2line to find the instructions addrs related to the lines numbers in source code.
 def get_addrs_from_lines_aarch64(image,fname,st,ed,lines):
     #First make the addr list file.
