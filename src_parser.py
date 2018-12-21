@@ -237,6 +237,7 @@ def _parse_patch_at(p_buf,st,ed,s_buf):
         else:
             #(name,head_line)
             inf.append((func_name[0],func_name[1],c_inf))
+        #print "inf:",inf
     return inf
 
 #clines: changed lines
@@ -400,26 +401,47 @@ def _locate_change_site_new(head,clines,blines,alines,s_buf,st_line=0):
     count=0
     targetlines=[]
     scores=[]
+    scores1=[]
+    scores2=[]
     types=[]
-    cline=_transfer(clines,len(clines))
+    bline=_transfer(blines,len(blines))
     aline=_transfer(alines,len(alines))
+    #print "bline:",bline
+    #print "aline:",aline
     inf = {}
     i=0
     while i < len(s_buf):
         if plines and nlines:
             if _cmp(plines,i):
+                print "\nplines:" ,plines
                 types += ['aft']
                 count += 1
-                score=_fuzzcmp(cline,_transfer(s_buf[(i-len(clines)):],len(clines)))+_fuzzcmp(aline,_transfer(s_buf[(i+len(plines)):],len(alines)))
+                lineslen=len(plines)
+                score1=_fuzzcmp(bline,_transfer(s_buf[(i-len(blines)):],len(blines)))
+                score2=_fuzzcmp(aline,_transfer(s_buf[(i+len(plines)):],len(alines)))
+                score=score1+score2+lineslen*30
+                print "score:",score
+                if lineslen==1:
+                    if len(plines[0])<15:
+                        score -=15
                 scores +=[score]
+                scores1 +=[score1]
+                scores2 +=[score2]
                 i += len(plines)
                 targetlines += [i]
             elif _cmp(nlines,i):
                 types += ['bfr']
                 count +=1
-                score =_fuzzcmp(cline,_transfer(s_buf[(i-len(clines)):],len(clines)))
-                score +=_fuzzcmp(aline,_transfer(s_buf[(i+len(nlines)):],len(alines)))
+                lineslen=len(nlines)
+                score1 =_fuzzcmp(bline,_transfer(s_buf[(i-len(blines)):],len(blines)))
+                score2 =_fuzzcmp(aline,_transfer(s_buf[(i+len(nlines)):],len(alines)))
+                score =score1+score2+30*lineslen-20
+                if lineslen==1:
+                    if len(plines[0])<15:
+                        score -=15
                 scores +=[score]
+                scores1 +=[score1]
+                scores2 +=[score2]
                 i += len(nlines)
                 targetlines += [i]
             else:
@@ -429,9 +451,18 @@ def _locate_change_site_new(head,clines,blines,alines,s_buf,st_line=0):
             if _cmp(plines,i):
                 types += ['aft']
                 count +=1
-                score=_fuzzcmp(cline,_transfer(s_buf[(i-len(clines)):],len(clines)))
-                score += _fuzzcmp(aline,_transfer(s_buf[(i+len(plines)):],len(alines)))
+                lineslen=len(plines)
+                score1=_fuzzcmp(bline,_transfer(s_buf[(i-len(blines)):],len(blines)))
+                score2= _fuzzcmp(aline,_transfer(s_buf[(i+len(plines)):],len(alines)))
+                score =score1+score2+30*lineslen
+                if lineslen==1:
+                    if len(plines[0])<15:
+                        score -=15
+                #print _fuzzcmp(bline,_transfer(s_buf[(i-len(blines)):],len(blines)))
+                #print _fuzzcmp(aline,_transfer(s_buf[(i+len(plines)):],len(alines)))
                 scores +=[score]
+                scores1 +=[score1]
+                scores2 +=[score2]
                 i += len(plines)
                 targetlines += [i]
             else:
@@ -441,9 +472,13 @@ def _locate_change_site_new(head,clines,blines,alines,s_buf,st_line=0):
             if _cmp(nlines,i):
                 types += ['bfr']
                 count +=1
-                score =_fuzzcmp(cline,_transfer(s_buf[(i-len(clines)):],len(clines)))
-                score += _fuzzcmp(aline,_transfer(s_buf[(i+len(nlines)):],len(alines)))
+                lineslen=len(nlines)
+                score1 =_fuzzcmp(bline,_transfer(s_buf[(i-len(blines)):],len(blines)))
+                score2 = _fuzzcmp(aline,_transfer(s_buf[(i+len(nlines)):],len(alines)))
+                score = score1+score2+30*lineslen-20
                 scores +=[score]
+                scores1 +=[score1]
+                scores2 +=[score2]
                 i += len(nlines)
                 targetlines += [i]
             else:
@@ -451,16 +486,27 @@ def _locate_change_site_new(head,clines,blines,alines,s_buf,st_line=0):
                 continue
     #print 'clines:',clines
     #print 'count =',count
-    #print 'scores:',scores
     #print 'targetlines',targetlines
     #print 'types:',types
     if count==0:
         #to do: it may because bft plines or aft inlines. But now we don't take them into account
         return (None, st_line)
+    #print scores
     score= max(scores)
     index= scores.index(score)
-    if score>50:
+    if score>199:
         ty=types[index]
+        
+        print "score=", score
+        print "score of blines: ",scores1[index]
+        print "score of alines: ",scores2[index]
+        print "blines: ", blines
+        if ty=='aft':
+            print 'plines:',plines
+        elif ty=='bfr':
+            print 'nlines:',nlines
+        print "alines: ", alines
+        
         score=scores[index]
         i=targetlines[index]
         if plines and nlines:
