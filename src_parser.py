@@ -4,14 +4,24 @@ import sys
 import re
 from pygments.lexers import get_lexer_by_name
 from pygments.token import Token
+from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
+import subprocess
 #from pycparser import c_parser
 
 dbg_out = False
+#dbg_out = True
 
 #The array's base index is 0, but base line number used by addr2line is 1, so we need adjustments when necessary.
 LINE_BASE = 1
+pre_patch="INIT"
+cur_patch="INIT"
+opensuccesscountperpatch=0
 
 #It seems that the line number is based on 1 instead of 0 for DWARF, so we need to +1 for each line number.
+def get_opensuccesscountperpatch():
+    global opensuccesscountperpatch
+    return opensuccesscountperpatch
 def adj_lno_tuple(t):
     return tuple(map(lambda x:x+LINE_BASE,t))
 
@@ -34,9 +44,18 @@ def _trim_lines(buf):
 def parse_patch(patch,kernel):
     inf = {}
     with open(patch,'r') as p:
+        #this is for count for patch zz
+        global pre_patch
+        global cur_patch
+        pre_patch=cur_patch
+        cur_patch=patch
         p_buf = p.readlines()
     _trim_lines(p_buf)
+    #print '\nparse_patch p_buf'
+    #print p_buf
     diff_index = [i for i in range(len(p_buf)) if p_buf[i].startswith('diff')] + [len(p_buf)]
+    #print 'diff_index:'
+    #print diff_index
     for i in range(len(diff_index)-1):
         inf.update(_parse_patch_diff(p_buf,diff_index[i],diff_index[i+1],kernel))
     #_adj_line_number(inf)
@@ -61,15 +80,76 @@ def _parse_patch_diff(p_buf,st,ed,kernel):
     if fp <> fn:
         print 'This diff involves file creation/deletion/rename: ' + p_buf[st]
         return inf
+    #print 'fp:',fp
+    #print 'fn:',fn
     #Got the file name now, split the '@@' sections.
     at_index = [i for i in range(st,ed) if p_buf[i].startswith('@@')] + [ed]
     s_buf = None
+    file_name=kernel+'/'+fp
+    if file_name.endswith("\r"):
+        #print 'delete \\r'
+        file_name=file_name[:-1]
+    #file_name='./msm/kernel/resource.c'
+    #print 'file_name:',file_name
+    global pre_patch
+    global cur_patch
+    global opensuccesscountperpatch
+    global openfailcount
     try:
-        with open(kernel+'/'+fp,'r') as f:
+        with open(file_name,'r') as f:
+            if pre_patch != cur_patch:
+                pre_patch=cur_patch
+                opensuccesscountperpatch = opensuccesscountperpatch+1
+                with open('housefuncexist','a') as f2:
+                    f2.write('open success'+'\n')
+                #print "opensuccesscountperpatch=", opensuccesscountperpatch  
+            print 'open success!'
             s_buf = f.readlines()
             build_func_map(s_buf)
-    except:
+    except Exception as ex:
+        print ex
+        filename=file_name.split('/')[-1]
+        #print filename
+        filename="'"+filename+"'"
+        #print filename
+        string1="cd "+sys.argv[2]+"&&find . -name "
+        p=subprocess.Popen(string1+filename, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        listfile=p.stdout.readlines()
+        #print listfile
+        for file_name in listfile:
+            if file_name.endswith("\n"):
+                file_name=file_name[:-1]
+            file_name=sys.argv[2]+file_name[1:]
+            try:
+                with open(file_name, 'r') as f2:
+                    #print "open file: ",file_name
+                    s_buf = f2.readlines()
+                    build_func_map(s_buf)
+            except Exception as ex:
+                print ex
+                continue
+            inf= _parse_patch_diff_2(s_buf,fp,at_index,p_buf,inf)
+            if bool(inf):
+                if pre_patch != cur_patch:
+                    pre_patch=cur_patch
+                    opensuccesscountperpatch = opensuccesscountperpatch+1
+                    with open('housefuncexist','a') as f2:
+                        f2.write('open success'+'\n')
+                #print "inf: ",inf
+                break
+        if bool(inf):
+            print "open success"
+        else:
+            print "open fail"
         return inf
+    return _parse_patch_diff_2(s_buf,fp,at_index,p_buf,inf)
+
+def _parse_patch_diff_2(s_buf,fp,at_index,p_buf,inf):
+    global cur_func_inf
+    #print 'cur_func_inf:'
+    #print cur_func_inf
+    #print 'cur_func_inf_r:'
+    #print cur_func_inf_r
     if not s_buf:
         print 'The file does not exist in target kernel: ' + fp
         return inf
@@ -77,6 +157,9 @@ def _parse_patch_diff(p_buf,st,ed,kernel):
     src_map[fp] = s_buf
     for i in range(len(at_index)-1):
         at_inf = _parse_patch_at(p_buf,at_index[i],at_index[i+1],s_buf)
+        #print 'at_inf:\n',at_inf
+        if at_inf == []:
+            continue
         for (func,func_loc,p_inf) in at_inf:
             #Let's do a hacking here: ignore all 'bfr' type @@ sections.
             #TODO: Better solutions later.
@@ -119,6 +202,7 @@ def _parse_patch_at(p_buf,st,ed,s_buf):
         else:
             i += 1
     c_index = [(p_st-1,p_st-1)] + c_index + [(ed,ed)]
+    #print 'c_index:  ',c_index
     inf = []
     prev_line = 0
     for i in range(1,len(c_index)-1):
@@ -127,7 +211,11 @@ def _parse_patch_at(p_buf,st,ed,s_buf):
         t0 = c_index[i-1][1] + 1
         t3 = c_index[i+1][0] - 1
         #Get the line number of the change-sites in kernel source.
-        (c_inf,prev_line) = _locate_change_site(head,p_buf[t1:t2+1],p_buf[t0:t1],p_buf[t2+1:t3+1],s_buf,st_line=prev_line) 
+        #(c_inf,prev_line) = _locate_change_site(head,p_buf[t1:t2+1],p_buf[t0:t1],p_buf[t2+1:t3+1],s_buf,st_line=prev_line)
+        #print head, '\n' ,p_buf[t1:t2+1],'\n',p_buf[t0:t1],'\n',p_buf[t2+1:t3+1]
+        (c_inf,prev_line) = _locate_change_site_new(head,p_buf[t1:t2+1],p_buf[t0:t1],p_buf[t2+1:t3+1],s_buf,st_line=prev_line)
+        #print '(c_inf,prev_line:)'
+        #print (c_inf,prev_line)
         if c_inf is None:
             if dbg_out:
                 print '>>>>No matches found for this @@'
@@ -136,8 +224,11 @@ def _parse_patch_at(p_buf,st,ed,s_buf):
             print c_inf
         lno = None
         if c_inf['type'] == 'aft':
+            #zz:adaptation
+            #lno = c_inf['add'].keys()[0][0] if 'add' in c_inf else c_inf['del'].keys()[0][0]
             lno = c_inf['add'].keys()[0][0] if 'add' in c_inf else c_inf['del'].keys()[0][0] - 1
         else:
+            #lno = c_inf['del'].keys()[0][0] if 'del' in c_inf else c_inf['add'].keys()[0][0]
             lno = c_inf['del'].keys()[0][0] if 'del' in c_inf else c_inf['add'].keys()[0][0] - 1
         func_name = get_func_name(lno)
         if not func_name:
@@ -163,12 +254,15 @@ def _locate_change_site(head,clines,blines,alines,s_buf,st_line=0):
             print l
         print '----------------@@--------------------'
     #locate head
+    #print 'head.strip():' ,head.strip()
     if head.strip():
         for i in range(len(s_buf)):
             if head.strip() == s_buf[i].strip():
+                #print 'head found,i=',i
                 break
         else:
             #No head found
+            #print 'No head found:' ,head.strip()
             return (None,st_line)
         if i < st_line:
             i = st_line
@@ -179,10 +273,20 @@ def _locate_change_site(head,clines,blines,alines,s_buf,st_line=0):
         if not lines:
             return True
         for j in range(len(lines)):
+            #if j>0:
+            #    print 'in _cmp, line number=',(i+j)
+            #    print 'i=',i,'    j=',j
+            re_space = '[\t ]*'
+            #if (i+j)==3272:
+            #    print re.sub(re_space,' ',lines[j]).strip()
+            #    print re.sub(re_space,' ',s_buf[i+j]).strip()
+            #    print re.sub(re_space,' ',lines[j]).strip() == re.sub(re_space,' ',s_buf[i+j]).strip()
             if i + j > len(s_buf) - 1:
                 #We have reached the end of the source file.
                 return False
             re_space = '[\t ]*'
+            #print re.sub(re_space,' ',lines[j]).strip()
+            #print re.sub(re_space,' ',s_buf[i+j]).strip()
             if re.sub(re_space,' ',lines[j]).strip() <> re.sub(re_space,' ',s_buf[i+j]).strip():
                 return False
         return True
@@ -191,19 +295,26 @@ def _locate_change_site(head,clines,blines,alines,s_buf,st_line=0):
     nlines = filter(lambda x:x.startswith('-'),clines)
     nlines = map(lambda x:x[1:],nlines)
     inf = {}
+    #print 'blines: ',blines #list of string
+    #print 'plines:',plines
+    #print 'nlines:',nlines
     while i < len(s_buf):
         j = i
         if _cmp(blines,i):
+            #print 'blines found', "  i=",i
             i += len(blines)
             ty = None
             if plines and nlines:
                 if _cmp(plines,i):
+                    #print 'plines found',"  i=",i
                     ty = 'aft'
                     i += len(plines) 
                 elif _cmp(nlines,i):
+                    #print 'blines found',"  i=",i
                     ty = 'bfr'
                     i += len(nlines)
                 else:
+                    #print 'neither plines or blines found',"  i=",i
                     i = j + 1
                     continue
                 if _cmp(alines,i):
@@ -222,12 +333,14 @@ def _locate_change_site(head,clines,blines,alines,s_buf,st_line=0):
             elif plines:
                 #Pure addition
                 if _cmp(plines,i):
+                    #print 'plines found,i=',i
                     ty = 'aft'
                     i += len(plines)
                 else:
                     ty = 'bfr'
                 if _cmp(alines,i):
                     #Got it.
+                    #print 'alines found,i=',i
                     if ty == 'aft':
                         inf['add'] = {(i-len(plines),i-1):plines}
                     else:
@@ -235,6 +348,7 @@ def _locate_change_site(head,clines,blines,alines,s_buf,st_line=0):
                     inf['type'] = ty
                     return (inf,i)
                 else:
+                    #print 'alines not found,i=',i
                     i = j + 1
                     continue
             elif nlines:
@@ -257,6 +371,127 @@ def _locate_change_site(head,clines,blines,alines,s_buf,st_line=0):
         else:
             i += 1
     return (None,st_line)
+
+def _locate_change_site_new(head,clines,blines,alines,s_buf,st_line=0):
+    def _cmp(lines,i):
+        if not lines:
+            return True
+        for j in range(len(lines)):
+            if i + j > len(s_buf) - 1:
+                return False
+            re_space = '[\t ]*'
+            if re.sub(re_space,' ',lines[j]).strip() <> re.sub(re_space,' ',s_buf[i+j]).strip():
+                return False
+        return True
+    def _transfer(lines,k):
+        result=''
+        re_space = '[\t ]*'
+        if k>len(lines):
+            k=len(lines)
+        for i in range(k):
+            result=result+re.sub(re_space,' ',lines[i]).strip()
+        return result
+    def _fuzzcmp(str1,str2):
+        return fuzz.ratio(str1,str2)
+    plines = filter(lambda x:x.startswith('+'),clines)
+    plines = map(lambda x:x[1:],plines)
+    nlines = filter(lambda x:x.startswith('-'),clines)
+    nlines = map(lambda x:x[1:],nlines)
+    count=0
+    targetlines=[]
+    scores=[]
+    types=[]
+    cline=_transfer(clines,len(clines))
+    aline=_transfer(alines,len(alines))
+    inf = {}
+    i=0
+    while i < len(s_buf):
+        if plines and nlines:
+            if _cmp(plines,i):
+                types += ['aft']
+                count += 1
+                score=_fuzzcmp(cline,_transfer(s_buf[(i-len(clines)):],len(clines)))+_fuzzcmp(aline,_transfer(s_buf[(i+len(plines)):],len(alines)))
+                scores +=[score]
+                i += len(plines)
+                targetlines += [i]
+            elif _cmp(nlines,i):
+                types += ['bfr']
+                count +=1
+                score =_fuzzcmp(cline,_transfer(s_buf[(i-len(clines)):],len(clines)))
+                score +=_fuzzcmp(aline,_transfer(s_buf[(i+len(nlines)):],len(alines)))
+                scores +=[score]
+                i += len(nlines)
+                targetlines += [i]
+            else:
+                i += 1
+                continue
+        elif plines:
+            if _cmp(plines,i):
+                types += ['aft']
+                count +=1
+                score=_fuzzcmp(cline,_transfer(s_buf[(i-len(clines)):],len(clines)))
+                score += _fuzzcmp(aline,_transfer(s_buf[(i+len(plines)):],len(alines)))
+                scores +=[score]
+                i += len(plines)
+                targetlines += [i]
+            else:
+                i += 1
+                continue
+        elif nlines:
+            if _cmp(nlines,i):
+                types += ['bfr']
+                count +=1
+                score =_fuzzcmp(cline,_transfer(s_buf[(i-len(clines)):],len(clines)))
+                score += _fuzzcmp(aline,_transfer(s_buf[(i+len(nlines)):],len(alines)))
+                scores +=[score]
+                i += len(nlines)
+                targetlines += [i]
+            else:
+                i += 1
+                continue
+    #print 'clines:',clines
+    #print 'count =',count
+    #print 'scores:',scores
+    #print 'targetlines',targetlines
+    #print 'types:',types
+    if count==0:
+        #to do: it may because bft plines or aft inlines. But now we don't take them into account
+        return (None, st_line)
+    score= max(scores)
+    index= scores.index(score)
+    if score>50:
+        ty=types[index]
+        score=scores[index]
+        i=targetlines[index]
+        if plines and nlines:
+            if ty == 'aft':
+                inf['add'] = {(i-len(plines),i-1):plines}
+                inf['del'] = {(i-len(plines),i-len(plines)+len(nlines)-1):nlines}
+            else:
+                inf['del'] = {(i-len(nlines),i-1):nlines}
+                inf['add'] = {(i-len(nlines),i-len(nlines)+len(plines)-1):plines}
+            inf['type'] = ty
+            return (inf,i)
+        elif plines:
+            if ty == 'aft':
+                inf['add'] = {(i-len(plines),i-1):plines}
+            else:
+                print 'plines bfr it should not be triggerred because returned before'
+            inf['type'] = ty
+            return (inf,i)
+        elif nlines:
+            if ty == 'bfr':
+                inf['del'] = {(i-len(nlines),i-1):nlines}
+            else:
+                print 'nlines aft it should not be triggerred because returned before'
+            inf['type'] = ty
+            return (inf,i)
+    else:
+        print "found clines but context is not suitable"
+    return (None,st_line)
+
+
+
 
 def print_patch_inf(inf):
     for k in inf:
