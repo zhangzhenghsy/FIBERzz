@@ -178,19 +178,17 @@ def do_ext_sig_markers(b,start,end,options=default_options,symbol_table=None):
 
 def do_ext_sig_insns(b,start,end,addrs,options=default_options,symbol_table=None, start2=None, end2=None, addrs2=None):
     #Get the CFG at first, which is the base for multiple later tasks.
-    cfg = get_cfg_acc(b,start,end)
-    #print "cfg:", [hex(n.addr) for n in cfg.nodes()]
-    for addr in cfg.functions:
-        print cfg.functions[addr]
-    func_cfg = get_func_cfg(cfg,start,proj=b,sym_tab=symbol_table,simplify=True)
-    #print "\nL186", cfg.functions[start]
+    #print "start=", hex(start)
+    #print "func_cfg:", [hex(n.addr) for n in func_cfg.nodes()]
     if start2 is not None:
         cfg2 = get_cfg_acc(b,start2,end2)
-        #print "\nL189", cfg.functions[start]
-        #for addr in cfg.functions:
-        #    print cfg.functions[addr]
         func_cfg2 = get_func_cfg(cfg2,start2,proj=b,sym_tab=symbol_table,simplify=True)
         sigs2 = init_signature_from_insns_aarch64(b,func_cfg2,addrs2,options,sym_tab=symbol_table)
+        targets2 = get_cfg_bound(sigs2)
+    cfg = get_cfg_acc(b,start,end)
+    func_cfg = get_func_cfg(cfg,start,proj=b,sym_tab=symbol_table,simplify=True)
+    print "func_cfg:", [hex(n.addr) for n in func_cfg.nodes()]
+    print "func_cfg2:", [hex(n.addr) for n in func_cfg2.nodes()]
     sigs = init_signature_from_insns_aarch64(b,func_cfg,addrs,options,sym_tab=symbol_table)
     sigs = filter(is_sig_valid,sigs)
     if not sigs:
@@ -199,10 +197,9 @@ def do_ext_sig_insns(b,start,end,addrs,options=default_options,symbol_table=None
     #Get the execution targets from the sigs.
     targets = get_cfg_bound(sigs)
     #print [hex(target) for target in targets]
-    targets2 = get_cfg_bound(sigs2)
     #for example set(['0xffffffc00061696cL'])
     exe = Sym_Executor(options=options,dbg_out=True)
-    smg = exe.try_sym_exec(proj=b,cfg=cfg, cfg_bounds=[start,end],targets=targets,start=start,new_tracer=True,new_recorder=True,sigs=sigs,sym_tab=symbol_table,cfg2=cfg2,cfg_bounds2=[start2,end2],targets2=targets2,start2=start2,func_cfg=func_cfg)
+    smg = exe.try_sym_exec(proj=b,cfg=cfg, cfg_bounds=[start,end],targets=targets,start=start,new_tracer=True,new_recorder=True,sigs=sigs,sym_tab=symbol_table,cfg2=cfg2,cfg_bounds2=[start2,end2],targets2=targets2,start2=start2)
     return (exe.tracer.addr_collision,sigs)
 
 #Due to multiple reasons (eg. Angr fails to generate the complete CFG), the initialized signature may be invalid
@@ -226,7 +223,7 @@ def get_next_index(s):
     else:
         sig_index[s] = 0
         return 0
-#[ref_kernel_image] [ref_kernel_symbol_table] [ref_kernel_vmlinux] [ext_list] [output_dir]
+
 def ext_sig():
     global BASE
     symbol_table = Sym_Table(sys.argv[2])
@@ -287,7 +284,7 @@ def ext_sig():
                 sig = networkx.DiGraph()
                 sig_name = housefunc_name+'-sig-%d' % get_next_index(housefunc_name)
                 sig.graph['sig_name'] = sig_name
-                sig.graph['func_name'] = house_func_name
+                sig.graph['func_name'] = func_name
                 sig.graph['options'] = options
                 with open(sys.argv[5]+'/'+sig_name,'wb') as fs:
                     pickle.dump(sig,fs,-1)
@@ -309,7 +306,7 @@ def ext_sig():
             perf_vec += [(housefunc_name+'-sig-%d' % sig_ind,time.time()-t0)]
             for i in range(len(sigs)):
                 #Record some global information in sig.
-                sigs[i].graph['func_name'] = housefunc_name
+                sigs[i].graph['func_name'] = func_name
                 if len(sigs) > 1:
                     sig_name = housefunc_name+'-sig-%d-%d' % (sig_ind,i)
                 else:
